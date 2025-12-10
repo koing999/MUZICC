@@ -1014,22 +1014,156 @@ class DAWPro {
     }
 
     async exportAudio() {
-        this.showLoading('오디오 렌더링 중...');
+        // 트랙이 있는지 확인
+        const activeTracks = this.tracks.filter(t => t.type !== 'master' && t.steps.some(s => s));
+        if (activeTracks.length === 0) {
+            this.showToast('내보낼 트랙이 없습니다. 먼저 비트를 만들어주세요!');
+            return;
+        }
+
+        this.showLoading('🎵 오디오 렌더링 중... (잠시만 기다려주세요)');
 
         try {
-            const offlineContext = new Tone.OfflineContext(2, 30, 44100);
+            // 렌더링 시간 계산 (초)
+            const totalBeats = 64;
+            const secondsPerBeat = 60 / this.bpm / 4; // 16n = 1/4 beat
+            const duration = totalBeats * secondsPerBeat;
 
-            // This is a simplified export - full implementation would require
-            // rendering all tracks to the offline context
+            // Offline Context 생성
+            const offlineCtx = new OfflineAudioContext(2, 44100 * duration, 44100);
 
-            setTimeout(() => {
-                this.hideLoading();
-                this.showToast('내보내기 기능은 추가 개발이 필요합니다');
-            }, 1000);
+            // 각 트랙의 노트 스케줄링
+            const notePromises = [];
+
+            for (const track of activeTracks) {
+                for (let beat = 0; beat < 64; beat++) {
+                    if (track.steps[beat]) {
+                        const time = beat * secondsPerBeat;
+
+                        // 간단한 오실레이터로 사운드 생성
+                        const osc = offlineCtx.createOscillator();
+                        const gain = offlineCtx.createGain();
+
+                        // 트랙 타입에 따른 사운드 설정
+                        if (track.type === 'drum') {
+                            if (track.sound === 'kick') {
+                                osc.type = 'sine';
+                                osc.frequency.setValueAtTime(150, time);
+                                osc.frequency.exponentialRampToValueAtTime(30, time + 0.1);
+                                gain.gain.setValueAtTime(0.8, time);
+                                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+                            } else if (track.sound === 'snare' || track.sound === 'hihat') {
+                                // 노이즈 대신 고주파
+                                osc.type = 'square';
+                                osc.frequency.setValueAtTime(track.sound === 'hihat' ? 8000 : 200, time);
+                                gain.gain.setValueAtTime(0.3, time);
+                                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+                            } else {
+                                osc.type = 'sine';
+                                osc.frequency.setValueAtTime(100, time);
+                                gain.gain.setValueAtTime(0.5, time);
+                                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
+                            }
+                        } else if (track.type === 'bass') {
+                            osc.type = 'sawtooth';
+                            osc.frequency.setValueAtTime(55, time); // A1
+                            gain.gain.setValueAtTime(0.4, time);
+                            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+                        } else {
+                            // synth, keys
+                            osc.type = 'sawtooth';
+                            osc.frequency.setValueAtTime(261.63, time); // C4
+                            gain.gain.setValueAtTime(0.3 * track.volume, time);
+                            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+                        }
+
+                        osc.connect(gain);
+                        gain.connect(offlineCtx.destination);
+                        osc.start(time);
+                        osc.stop(time + 0.5);
+                    }
+                }
+            }
+
+            // 렌더링 실행
+            const renderedBuffer = await offlineCtx.startRendering();
+
+            // WAV 파일로 변환
+            const wav = this.audioBufferToWav(renderedBuffer);
+            const blob = new Blob([wav], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+
+            // 다운로드
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `daw-export-${Date.now()}.wav`;
+            a.click();
+
+            this.hideLoading();
+            this.showToast('✅ WAV 파일 내보내기 완료!');
 
         } catch (err) {
+            console.error('Export error:', err);
             this.hideLoading();
-            this.showToast('내보내기 실패');
+            this.showToast('❌ 내보내기 실패: ' + err.message);
+        }
+    }
+
+    // AudioBuffer를 WAV로 변환
+    audioBufferToWav(buffer) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const format = 1; // PCM
+        const bitDepth = 16;
+
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = numChannels * bytesPerSample;
+
+        const data = [];
+        for (let channel = 0; channel < numChannels; channel++) {
+            data.push(buffer.getChannelData(channel));
+        }
+
+        const samples = buffer.length;
+        const dataSize = samples * blockAlign;
+        const bufferSize = 44 + dataSize;
+
+        const arrayBuffer = new ArrayBuffer(bufferSize);
+        const view = new DataView(arrayBuffer);
+
+        // WAV 헤더 작성
+        this.writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataSize, true);
+        this.writeString(view, 8, 'WAVE');
+        this.writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * blockAlign, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        this.writeString(view, 36, 'data');
+        view.setUint32(40, dataSize, true);
+
+        // 오디오 데이터 작성 (인터리브)
+        let offset = 44;
+        for (let i = 0; i < samples; i++) {
+            for (let channel = 0; channel < numChannels; channel++) {
+                let sample = data[channel][i];
+                sample = Math.max(-1, Math.min(1, sample));
+                sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(offset, sample, true);
+                offset += 2;
+            }
+        }
+
+        return arrayBuffer;
+    }
+
+    writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
         }
     }
 
