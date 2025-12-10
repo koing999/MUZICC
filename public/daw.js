@@ -1,4 +1,36 @@
-﻿
+﻿/**
+ * ============================================================
+ * 🎵 DAW Pro - AI Music Studio
+ * ============================================================
+ * 
+ * AI 음악 생성과 DAW 기능을 통합한 웹 기반 음악 제작 도구
+ * 
+ * 📋 코드 구조:
+ * ──────────────────────────────────────────────────────────
+ * 1. START WORKFLOW     - 시작 모달 워크플로우 처리
+ * 2. SUNO API           - AI 음악 생성 API 연동 클래스
+ * 3. FULL SONG MODAL    - 풀 곡 생성 모달 UI/로직
+ * 4. YOUTUBE UPLOAD     - YouTube 업로드 모달/로직
+ * 5. DAW PRO CLASS      - 메인 DAW 엔진 클래스
+ *    - constructor      : 초기화
+ *    - init             : Tone.js 및 이벤트 설정
+ *    - addTrack         : 트랙 추가
+ *    - createDrumSound  : 드럼 사운드 생성
+ *    - createSynthSound : 신디사이저 사운드 생성
+ *    - play/stop/rewind : 재생 컨트롤
+ *    - saveProject      : 프로젝트 저장
+ *    - exportAudio      : WAV 파일 내보내기
+ *    - generateAIVocal  : AI 보컬 생성
+ * ──────────────────────────────────────────────────────────
+ * 
+ * 🔧 의존성:
+ * - Tone.js (오디오 엔진)
+ * - server.js (API 백엔드)
+ * 
+ * 📅 마지막 업데이트: 2024-12
+ * ============================================================
+ */
+
 // ==================== START WORKFLOW ====================
 function startWorkflow(mode) {
     document.getElementById('start-modal').style.display = 'none';
@@ -68,6 +100,38 @@ class SunoAPI {
             return await response.json();
         } catch (error) {
             console.error('YouTube 저장 오류:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // YouTube 업로드 기능
+    async getYoutubeStatus() {
+        try {
+            const response = await fetch(`${this.baseUrl}/youtube/status`);
+            return await response.json();
+        } catch (error) {
+            return { ready: false, error: error.message };
+        }
+    }
+
+    async getPendingUploads() {
+        try {
+            const response = await fetch(`${this.baseUrl}/youtube/pending`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    }
+
+    async uploadToYoutube(audioPath, title) {
+        try {
+            const response = await fetch(`${this.baseUrl}/youtube/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audioPath, title })
+            });
+            return await response.json();
+        } catch (error) {
             return { success: false, error: error.message };
         }
     }
@@ -264,6 +328,140 @@ async function saveToYoutubeFolder(audioUrl, title) {
 }
 window.saveToYoutubeFolder = saveToYoutubeFolder;
 
+// YouTube 업로드 모달
+async function openYoutubeUploader() {
+    // 모달 생성
+    const modal = document.createElement('div');
+    modal.id = 'youtube-modal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95); z-index: 20000;
+        display: flex; justify-content: center; align-items: center;
+    `;
+
+    // 상태 확인
+    const status = await sunoAPI.getYoutubeStatus();
+    const pending = await sunoAPI.getPendingUploads();
+
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #12121a, #1a1a2e);
+            border-radius: 24px; padding: 40px; max-width: 700px; width: 90%;
+            border: 1px solid #ff0000;
+        ">
+            <h2 style="
+                font-size: 1.8em; margin-bottom: 20px; text-align: center;
+                color: #ff0000;
+            ">📺 YouTube 업로드</h2>
+            
+            <div style="margin-bottom: 20px; padding: 15px; background: #1a1a25; border-radius: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <span style="color: ${status.uploaderExists ? '#00ff88' : '#ff4444'};">
+                        ${status.uploaderExists ? '✅' : '❌'} 업로더 스크립트
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="color: ${status.clientSecretExists ? '#00ff88' : '#ff4444'};">
+                        ${status.clientSecretExists ? '✅' : '❌'} Google API 인증
+                    </span>
+                </div>
+                ${!status.clientSecretExists ? `
+                    <div style="margin-top: 10px; padding: 10px; background: #2a1a1a; border-radius: 4px; font-size: 12px; color: #ff8888;">
+                        ⚠️ Google Cloud Console에서 client_secret.json을 다운로드하여<br>
+                        ai-music-studio 폴더에 저장해주세요.
+                    </div>
+                ` : ''}
+            </div>
+            
+            <h3 style="color: #888; font-size: 14px; margin-bottom: 15px;">📁 업로드 대기 중인 파일</h3>
+            
+            <div id="pending-files" style="max-height: 200px; overflow-y: auto; margin-bottom: 20px;">
+                ${pending.length === 0 ? `
+                    <div style="text-align: center; color: #666; padding: 20px;">
+                        업로드 대기 중인 파일이 없습니다.<br>
+                        <small>AI 생성 후 "YouTube 폴더 저장" 버튼을 눌러주세요.</small>
+                    </div>
+                ` : pending.map(file => `
+                    <div style="
+                        display: flex; align-items: center; justify-content: space-between;
+                        padding: 10px; background: #1a1a25; border-radius: 8px; margin-bottom: 8px;
+                    ">
+                        <span style="color: #fff;">🎵 ${file.name}</span>
+                        <button onclick="uploadFile('${file.path.replace(/\\/g, '\\\\')}', '${file.name}')" style="
+                            padding: 8px 16px; background: #ff0000; border: none;
+                            border-radius: 4px; color: #fff; cursor: pointer;
+                        ">📤 업로드</button>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div style="display: flex; gap: 15px;">
+                <button style="
+                    flex: 1; padding: 15px; background: none; border: 1px solid #444;
+                    border-radius: 12px; color: #888; cursor: pointer;
+                " onclick="document.getElementById('youtube-modal').remove()">
+                    닫기
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+window.openYoutubeUploader = openYoutubeUploader;
+
+// 파일 업로드 실행
+async function uploadFile(filepath, filename) {
+    const title = filename.replace(/\.(mp3|wav)$/i, '').replace(/_/g, ' ');
+
+    if (!confirm(`"${title}" 파일을 YouTube에 업로드하시겠습니까?`)) {
+        return;
+    }
+
+    document.getElementById('youtube-modal').innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #12121a, #1a1a2e);
+            border-radius: 24px; padding: 40px; max-width: 400px;
+            border: 1px solid #ff0000; text-align: center;
+        ">
+            <div class="spinner" style="margin: 0 auto 20px;"></div>
+            <div style="color: #fff;">📤 YouTube 업로드 중...</div>
+            <div style="color: #888; font-size: 12px; margin-top: 10px;">
+                (변환 + 업로드로 1~3분 소요)
+            </div>
+        </div>
+    `;
+
+    const result = await sunoAPI.uploadToYoutube(filepath, title);
+
+    if (result.success) {
+        document.getElementById('youtube-modal').innerHTML = `
+            <div style="
+                background: linear-gradient(135deg, #12121a, #1a1a2e);
+                border-radius: 24px; padding: 40px; max-width: 500px;
+                border: 1px solid #00ff88; text-align: center;
+            ">
+                <span style="font-size: 50px;">🎉</span>
+                <h3 style="color: #00ff88; margin: 20px 0;">업로드 완료!</h3>
+                ${result.url ? `
+                    <a href="${result.url}" target="_blank" style="
+                        display: block; padding: 15px; background: #ff0000;
+                        border-radius: 8px; color: #fff; text-decoration: none;
+                        margin-bottom: 20px;
+                    ">🔗 YouTube에서 보기</a>
+                ` : ''}
+                <button onclick="document.getElementById('youtube-modal').remove()" style="
+                    padding: 12px 30px; background: none; border: 1px solid #444;
+                    border-radius: 8px; color: #888; cursor: pointer;
+                ">닫기</button>
+            </div>
+        `;
+    } else {
+        alert('❌ 업로드 실패: ' + result.error);
+        document.getElementById('youtube-modal').remove();
+    }
+}
+window.uploadFile = uploadFile;
+
 // ==================== MAIN DAW ENGINE ====================
 class DAWPro {
     constructor() {
@@ -406,6 +604,7 @@ class DAWPro {
             solo: false,
             patterns: [],
             steps: new Array(64).fill(false),
+            notes: {},  // 피아노 롤 노트 저장 {beat: [note1, note2, ...]}
             synth: null,
             player: null
         };
@@ -751,10 +950,17 @@ class DAWPro {
         document.getElementById('play-btn').textContent = '⏸';
 
         Tone.Transport.scheduleRepeat((time) => {
-            // Play active steps
+            // Play active steps (드럼 등 스텝 시퀀서)
             this.tracks.forEach(track => {
                 if (track.steps[this.currentBeat] && !track.muted) {
                     this.playNote(track);
+                }
+
+                // Play piano roll notes (신디/베이스 등)
+                if (track.notes && track.notes[this.currentBeat] && !track.muted) {
+                    track.notes[this.currentBeat].forEach(note => {
+                        this.playNote(track, note, '8n');
+                    });
                 }
             });
 
@@ -944,7 +1150,8 @@ class DAWPro {
                 volume: t.volume,
                 pan: t.pan,
                 muted: t.muted,
-                steps: t.steps
+                steps: t.steps,
+                notes: t.notes || {}  // 피아노 롤 노트 저장
             }))
         };
 
@@ -997,6 +1204,7 @@ class DAWPro {
             track.pan = t.pan;
             track.muted = t.muted;
             track.steps = t.steps || new Array(64).fill(false);
+            track.notes = t.notes || {};  // 피아노 롤 노트 복원
 
             // Update UI
             const trackEl = document.getElementById(track.id);
@@ -1299,10 +1507,37 @@ class DAWPro {
         document.getElementById('piano-grid').addEventListener('click', (e) => {
             if (e.target.classList.contains('grid-cell')) {
                 const note = e.target.dataset.note;
-                const beat = e.target.dataset.beat;
+                const beat = parseInt(e.target.dataset.beat);
 
-                // Toggle note
-                e.target.classList.toggle('note-active');
+                // Toggle note visual
+                const isActive = e.target.classList.toggle('note-active');
+
+                // Save note to track
+                if (this.selectedTrack) {
+                    if (!this.selectedTrack.notes) {
+                        this.selectedTrack.notes = {};
+                    }
+
+                    if (isActive) {
+                        // 노트 추가
+                        if (!this.selectedTrack.notes[beat]) {
+                            this.selectedTrack.notes[beat] = [];
+                        }
+                        if (!this.selectedTrack.notes[beat].includes(note)) {
+                            this.selectedTrack.notes[beat].push(note);
+                        }
+                    } else {
+                        // 노트 제거
+                        if (this.selectedTrack.notes[beat]) {
+                            this.selectedTrack.notes[beat] = this.selectedTrack.notes[beat].filter(n => n !== note);
+                            if (this.selectedTrack.notes[beat].length === 0) {
+                                delete this.selectedTrack.notes[beat];
+                            }
+                        }
+                    }
+
+                    console.log('Notes saved:', this.selectedTrack.notes);
+                }
 
                 // Play preview
                 if (this.selectedTrack && this.selectedTrack.synth) {
