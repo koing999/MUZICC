@@ -1,0 +1,642 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAW Pro - AI Music Studio</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- 시작 모달: 워크플로우 선택 -->
+    <div id="start-modal" style="
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95); z-index: 10000;
+        display: flex; justify-content: center; align-items: center;
+    ">
+        <div style="
+            background: linear-gradient(135deg, #12121a, #1a1a2e);
+            border-radius: 24px; padding: 40px; max-width: 800px;
+            border: 1px solid #2a2a3a; text-align: center;
+        ">
+            <h1 style="
+                font-size: 2.5em; margin-bottom: 10px;
+                background: linear-gradient(90deg, #00d4ff, #ff00d4);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            ">🎵 AI Music Studio</h1>
+            <p style="color: #888; margin-bottom: 40px;">무엇을 만들까요?</p>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                <!-- 옵션 1: 비트부터 -->
+                <div class="workflow-option" onclick="startWorkflow('beat')" style="
+                    background: #1a1a25; border-radius: 16px; padding: 30px;
+                    cursor: pointer; border: 2px solid transparent;
+                    transition: all 0.3s;
+                " onmouseover="this.style.borderColor='#00d4ff'" onmouseout="this.style.borderColor='transparent'">
+                    <div style="font-size: 50px; margin-bottom: 15px;">🥁</div>
+                    <h3 style="color: #00d4ff; margin-bottom: 10px;">비트 만들기</h3>
+                    <p style="color: #666; font-size: 13px;">드럼, 베이스, 멜로디<br>처음부터 직접 만들기</p>
+                </div>
+
+                <!-- 옵션 2: 보컬만 -->
+                <div class="workflow-option" onclick="startWorkflow('vocal')" style="
+                    background: #1a1a25; border-radius: 16px; padding: 30px;
+                    cursor: pointer; border: 2px solid transparent;
+                    transition: all 0.3s;
+                " onmouseover="this.style.borderColor='#ff00d4'" onmouseout="this.style.borderColor='transparent'">
+                    <div style="font-size: 50px; margin-bottom: 15px;">🎤</div>
+                    <h3 style="color: #ff00d4; margin-bottom: 10px;">보컬만 만들기</h3>
+                    <p style="color: #666; font-size: 13px;">AI로 보컬 생성<br>기존 비트에 얹기</p>
+                </div>
+
+                <!-- 옵션 3: 전체 곡 -->
+                <div class="workflow-option" onclick="startWorkflow('full')" style="
+                    background: #1a1a25; border-radius: 16px; padding: 30px;
+                    cursor: pointer; border: 2px solid transparent;
+                    transition: all 0.3s;
+                " onmouseover="this.style.borderColor='#00ff88'" onmouseout="this.style.borderColor='transparent'">
+                    <div style="font-size: 50px; margin-bottom: 15px;">🎵</div>
+                    <h3 style="color: #00ff88; margin-bottom: 10px;">풀 곡 만들기</h3>
+                    <p style="color: #666; font-size: 13px;">비트 + 보컬 합성<br>Suno AI로 완성곡</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #2a2a3a;">
+                <button onclick="startWorkflow('free')" style="
+                    background: none; border: 1px solid #444;
+                    color: #888; padding: 12px 30px; border-radius: 8px;
+                    cursor: pointer; font-size: 14px;
+                ">🎛️ 자유 모드 (DAW 바로 열기)</button>
+            </div>
+        </div>
+    </div>
+
+    
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">🎵 DAW Pro</div>
+        <div class="transport">
+            <button id="rewind-btn" title="처음으로">⏮</button>
+            <button id="play-btn" title="재생/정지">▶</button>
+            <button id="record-btn" title="녹음">⏺</button>
+            <button id="loop-btn" title="반복">🔁</button>
+        </div>
+        <div class="tempo-control">
+            <span>BPM</span>
+            <input type="number" id="tempo-input" value="120" min="40" max="300">
+        </div>
+        <div class="time-display" id="time-display">00:00:00</div>
+        <div class="project-controls">
+            <button class="project-btn" id="save-btn">💾 저장</button>
+            <button class="project-btn" id="load-btn">📂 불러오기</button>
+            <button class="project-btn" id="export-btn">📤 내보내기</button>
+            <button class="project-btn" id="youtube-btn" style="background: #ff0000; color: white;" onclick="openYoutubeUploader()">📺 YouTube</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Left Panel - Instruments -->
+        <div class="instruments-panel">
+            <div class="panel-title">🎹 악기</div>
+
+            <div class="instrument-category">
+                <div class="category-title">🥁 드럼</div>
+                <div class="instrument-list" id="drum-list">
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="kick">
+                        <div class="inst-icon drums">🦶</div>
+                        <span>Kick</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="snare">
+                        <div class="inst-icon drums">🪘</div>
+                        <span>Snare</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="hihat">
+                        <div class="inst-icon drums">🎩</div>
+                        <span>Hi-Hat</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="clap">
+                        <div class="inst-icon drums">👏</div>
+                        <span>Clap</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="tom">
+                        <div class="inst-icon drums">🥁</div>
+                        <span>Tom</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="cymbal">
+                        <div class="inst-icon drums">🔔</div>
+                        <span>Cymbal</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="rim">
+                        <div class="inst-icon drums">🪵</div>
+                        <span>Rim Shot</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="drum" data-sound="perc">
+                        <div class="inst-icon drums">🎯</div>
+                        <span>Percussion</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="instrument-category">
+                <div class="category-title">🎹 키보드</div>
+                <div class="instrument-list">
+                    <div class="instrument-item" draggable="true" data-type="synth" data-sound="piano">
+                        <div class="inst-icon keys">🎹</div>
+                        <span>Piano</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="synth" data-sound="synth">
+                        <div class="inst-icon synth">🎛️</div>
+                        <span>Synth Lead</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="synth" data-sound="pad">
+                        <div class="inst-icon synth">🌊</div>
+                        <span>Pad</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="synth" data-sound="organ">
+                        <div class="inst-icon keys">⛪</div>
+                        <span>Organ</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="synth" data-sound="pluck">
+                        <div class="inst-icon synth">✨</div>
+                        <span>Pluck</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="instrument-category">
+                <div class="category-title">🎸 베이스</div>
+                <div class="instrument-list">
+                    <div class="instrument-item" draggable="true" data-type="bass" data-sound="sub">
+                        <div class="inst-icon bass">📢</div>
+                        <span>Sub Bass</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="bass" data-sound="808">
+                        <div class="inst-icon bass">🔊</div>
+                        <span>808 Bass</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="bass" data-sound="synthbass">
+                        <div class="inst-icon bass">🎛️</div>
+                        <span>Synth Bass</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="bass" data-sound="ebass">
+                        <div class="inst-icon bass">🎸</div>
+                        <span>Electric Bass</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="instrument-category">
+                <div class="category-title">🎤 보컬</div>
+                <div class="instrument-list">
+                    <div class="instrument-item" draggable="true" data-type="vocal" data-sound="aivocal">
+                        <div class="inst-icon vocal">🤖</div>
+                        <span>AI 보컬</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="vocal" data-sound="recording">
+                        <div class="inst-icon vocal">🎙️</div>
+                        <span>녹음</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="instrument-category">
+                <div class="category-title">🎬 FX</div>
+                <div class="instrument-list">
+                    <div class="instrument-item" draggable="true" data-type="fx" data-sound="riser">
+                        <div class="inst-icon fx">📈</div>
+                        <span>Riser</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="fx" data-sound="downlifter">
+                        <div class="inst-icon fx">📉</div>
+                        <span>Downlifter</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="fx" data-sound="noise">
+                        <div class="inst-icon fx">🌫️</div>
+                        <span>Noise</span>
+                    </div>
+                    <div class="instrument-item" draggable="true" data-type="fx" data-sound="impact">
+                        <div class="inst-icon fx">💥</div>
+                        <span>Impact</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center - Timeline & Tracks -->
+        <div class="timeline-container">
+            <div class="timeline-header">
+                <div class="playhead" id="playhead" style="left: 200px;"></div>
+                <div class="timeline-ruler" id="timeline-ruler"></div>
+            </div>
+            <div class="tracks-container" id="tracks-container">
+                <!-- Tracks will be added here -->
+            </div>
+            <div style="padding: 10px; background: var(--bg-panel); border-top: 1px solid var(--border);">
+                <button id="add-track-btn"
+                    style="padding: 8px 16px; background: var(--accent); border: none; border-radius: 6px; color: var(--bg-dark); cursor: pointer; font-weight: bold;">
+                    + 트랙 추가
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel - Mixer & Effects -->
+        <div class="right-panel">
+            <div class="tabs">
+                <button class="tab active" data-tab="mixer">믹서</button>
+                <button class="tab" data-tab="effects">이펙트</button>
+                <button class="tab" data-tab="synth">신디</button>
+                <button class="tab" data-tab="vocal">AI보컬</button>
+                <button class="tab" data-tab="record">녹음</button>
+            </div>
+
+            <!-- Mixer Tab -->
+            <div class="tab-content active" id="mixer-tab">
+                <div class="panel-title">🎚️ 믹서</div>
+                <div class="mixer-channels" id="mixer-channels">
+                    <!-- Channels generated by JS -->
+                </div>
+            </div>
+
+            <!-- Effects Tab -->
+            <div class="tab-content" id="effects-tab">
+                <div class="panel-title">🎛️ 이펙트</div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">🔊 Reverb</span>
+                        <div class="effect-toggle active" data-effect="reverb"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="reverb-decay" data-value="50"></div>
+                            <span class="knob-label">Decay</span>
+                            <span class="knob-value">50%</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="reverb-wet" data-value="30"></div>
+                            <span class="knob-label">Wet</span>
+                            <span class="knob-value">30%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">⏱️ Delay</span>
+                        <div class="effect-toggle" data-effect="delay"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="delay-time" data-value="40"></div>
+                            <span class="knob-label">Time</span>
+                            <span class="knob-value">40%</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="delay-feedback" data-value="30"></div>
+                            <span class="knob-label">Feedback</span>
+                            <span class="knob-value">30%</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="delay-wet" data-value="25"></div>
+                            <span class="knob-label">Wet</span>
+                            <span class="knob-value">25%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">📊 EQ</span>
+                        <div class="effect-toggle active" data-effect="eq"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="eq-low" data-value="50"></div>
+                            <span class="knob-label">Low</span>
+                            <span class="knob-value">0dB</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="eq-mid" data-value="50"></div>
+                            <span class="knob-label">Mid</span>
+                            <span class="knob-value">0dB</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="eq-high" data-value="50"></div>
+                            <span class="knob-label">High</span>
+                            <span class="knob-value">0dB</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">🔥 Distortion</span>
+                        <div class="effect-toggle" data-effect="distortion"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="dist-amount" data-value="20"></div>
+                            <span class="knob-label">Amount</span>
+                            <span class="knob-value">20%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">💫 Flanger</span>
+                        <div class="effect-toggle" data-effect="flanger"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="flanger-rate" data-value="30"></div>
+                            <span class="knob-label">Rate</span>
+                            <span class="knob-value">30%</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="flanger-depth" data-value="50"></div>
+                            <span class="knob-label">Depth</span>
+                            <span class="knob-value">50%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">🎯 Compressor</span>
+                        <div class="effect-toggle active" data-effect="compressor"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="comp-threshold" data-value="60"></div>
+                            <span class="knob-label">Threshold</span>
+                            <span class="knob-value">-12dB</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="comp-ratio" data-value="40"></div>
+                            <span class="knob-label">Ratio</span>
+                            <span class="knob-value">4:1</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="effect-unit">
+                    <div class="effect-header">
+                        <span class="effect-name">🎮 Bitcrusher</span>
+                        <div class="effect-toggle" data-effect="bitcrusher"></div>
+                    </div>
+                    <div class="effect-knobs">
+                        <div class="knob-container">
+                            <div class="knob" data-param="bit-depth" data-value="80"></div>
+                            <span class="knob-label">Bits</span>
+                            <span class="knob-value">12</span>
+                        </div>
+                        <div class="knob-container">
+                            <div class="knob" data-param="bit-rate" data-value="100"></div>
+                            <span class="knob-label">Rate</span>
+                            <span class="knob-value">44.1k</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Synth Tab (Triple Oscillator) -->
+            <div class="tab-content" id="synth-tab">
+                <div class="panel-title">🎛️ Triple Oscillator</div>
+
+                <div class="oscillator-panel">
+                    <div style="margin-bottom: 15px; font-size: 14px; color: var(--accent3);">OSC 1</div>
+                    <div class="osc-section">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 5px;">Wave</div>
+                            <div class="osc-wave-select" data-osc="1">
+                                <button class="wave-btn active" data-wave="sine">∿</button>
+                                <button class="wave-btn" data-wave="square">⊓</button>
+                                <button class="wave-btn" data-wave="sawtooth">⩘</button>
+                                <button class="wave-btn" data-wave="triangle">△</button>
+                            </div>
+                        </div>
+                        <div class="effect-knobs">
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc1-vol" data-value="80"></div>
+                                <span class="knob-label">Volume</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc1-detune" data-value="50"></div>
+                                <span class="knob-label">Detune</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; font-size: 14px; color: var(--accent3);">OSC 2</div>
+                    <div class="osc-section">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 5px;">Wave</div>
+                            <div class="osc-wave-select" data-osc="2">
+                                <button class="wave-btn" data-wave="sine">∿</button>
+                                <button class="wave-btn active" data-wave="square">⊓</button>
+                                <button class="wave-btn" data-wave="sawtooth">⩘</button>
+                                <button class="wave-btn" data-wave="triangle">△</button>
+                            </div>
+                        </div>
+                        <div class="effect-knobs">
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc2-vol" data-value="60"></div>
+                                <span class="knob-label">Volume</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc2-detune" data-value="55"></div>
+                                <span class="knob-label">Detune</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; font-size: 14px; color: var(--accent3);">OSC 3</div>
+                    <div class="osc-section">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 5px;">Wave</div>
+                            <div class="osc-wave-select" data-osc="3">
+                                <button class="wave-btn" data-wave="sine">∿</button>
+                                <button class="wave-btn" data-wave="square">⊓</button>
+                                <button class="wave-btn active" data-wave="sawtooth">⩘</button>
+                                <button class="wave-btn" data-wave="triangle">△</button>
+                            </div>
+                        </div>
+                        <div class="effect-knobs">
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc3-vol" data-value="40"></div>
+                                <span class="knob-label">Volume</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="osc3-detune" data-value="45"></div>
+                                <span class="knob-label">Detune</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px;">ADSR Envelope</div>
+                        <div class="effect-knobs">
+                            <div class="knob-container">
+                                <div class="knob" data-param="env-attack" data-value="10"></div>
+                                <span class="knob-label">Attack</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="env-decay" data-value="30"></div>
+                                <span class="knob-label">Decay</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="env-sustain" data-value="70"></div>
+                                <span class="knob-label">Sustain</span>
+                            </div>
+                            <div class="knob-container">
+                                <div class="knob" data-param="env-release" data-value="40"></div>
+                                <span class="knob-label">Release</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Vocal Tab -->
+            <div class="tab-content" id="vocal-tab">
+                <div class="panel-title">🤖 AI 보컬 생성</div>
+
+                <div class="ai-vocal-section">
+                    <div class="ai-vocal-title">✨ 가사 입력</div>
+                    <textarea class="lyrics-input" id="lyrics-input"
+                        placeholder="여기에 가사를 입력하세요...&#10;&#10;예시:&#10;오늘도 또 하루가 지나가네&#10;별빛 아래 너를 그리며"></textarea>
+
+                    <div class="vocal-options">
+                        <div class="vocal-option">
+                            <label>보컬 스타일</label>
+                            <select id="vocal-style">
+                                <option value="pop">팝</option>
+                                <option value="ballad">발라드</option>
+                                <option value="rock">록</option>
+                                <option value="rnb">R&B</option>
+                                <option value="hiphop">힙합</option>
+                                <option value="jazz">재즈</option>
+                            </select>
+                        </div>
+                        <div class="vocal-option">
+                            <label>목소리 타입</label>
+                            <select id="voice-type">
+                                <option value="female-soft">여성 (소프트)</option>
+                                <option value="female-powerful">여성 (파워풀)</option>
+                                <option value="male-soft">남성 (소프트)</option>
+                                <option value="male-powerful">남성 (파워풀)</option>
+                            </select>
+                        </div>
+                        <div class="vocal-option">
+                            <label>언어</label>
+                            <select id="vocal-language">
+                                <option value="ko">한국어</option>
+                                <option value="en">영어</option>
+                                <option value="ja">일본어</option>
+                            </select>
+                        </div>
+                        <div class="vocal-option">
+                            <label>길이 (초)</label>
+                            <input type="number" id="vocal-duration" value="30" min="10" max="180">
+                        </div>
+                    </div>
+
+                    <button class="generate-vocal-btn" id="generate-vocal-btn">
+                        🎤 AI 보컬 생성
+                    </button>
+
+                    <div style="margin-top: 15px; padding: 10px; background: var(--bg-dark); border-radius: 8px; display: none;"
+                        id="vocal-result">
+                        <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px;">생성된 보컬</div>
+                        <audio id="vocal-audio" controls style="width: 100%;"></audio>
+                        <button
+                            style="margin-top: 10px; padding: 8px 16px; background: var(--accent); border: none; border-radius: 4px; color: var(--bg-dark); cursor: pointer;"
+                            id="add-vocal-track">
+                            트랙에 추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recording Tab -->
+            <div class="tab-content" id="record-tab">
+                <div class="panel-title">🎙️ 녹음</div>
+
+                <div class="recording-section">
+                    <div class="recording-title">🔴 마이크 녹음</div>
+
+                    <div class="waveform-display">
+                        <canvas class="waveform-canvas" id="waveform-canvas"></canvas>
+                    </div>
+
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <span id="recording-time" style="font-family: monospace; font-size: 24px;">00:00</span>
+                    </div>
+
+                    <div class="recording-controls">
+                        <button class="rec-btn record" id="mic-record-btn" title="녹음 시작">⏺</button>
+                        <button class="rec-btn stop" id="mic-stop-btn" title="정지">⏹</button>
+                        <button class="rec-btn play" id="mic-play-btn" title="재생">▶</button>
+                    </div>
+
+                    <div style="margin-top: 15px; display: none;" id="recording-result">
+                        <audio id="recorded-audio" controls style="width: 100%;"></audio>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="project-btn" id="add-recording-track">트랙에 추가</button>
+                            <button class="project-btn" id="download-recording">다운로드</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="upload-section" id="upload-section">
+                    <input type="file" id="file-input" accept="audio/*">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">오디오 파일 업로드<br>(WAV, MP3, OGG)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Piano Roll -->
+    <div class="piano-roll-container" id="piano-roll">
+        <div style="flex: 1; display: flex; flex-direction: column;">
+            <div class="piano-roll-header">
+                <span style="font-size: 16px; font-weight: bold;">🎹 피아노 롤</span>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="scale-select"
+                        style="padding: 5px; background: var(--bg-track); border: 1px solid var(--border); color: var(--text); border-radius: 4px;">
+                        <option value="chromatic">Chromatic</option>
+                        <option value="major">Major</option>
+                        <option value="minor">Minor</option>
+                        <option value="pentatonic">Pentatonic</option>
+                        <option value="blues">Blues</option>
+                    </select>
+                    <button class="close-piano-roll" id="close-piano-roll">×</button>
+                </div>
+            </div>
+            <div style="display: flex; flex: 1; overflow: hidden;">
+                <div class="piano-keys" id="piano-keys"></div>
+                <div class="piano-grid" id="piano-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loading-text">처리 중...</div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    
+
+    <script src="daw.js"></script>
+</body>
+</html>

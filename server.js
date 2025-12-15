@@ -25,7 +25,7 @@ app.post('/api/generate-music', async (req, res) => {
         const fetch = (await import('node-fetch')).default;
 
         const data = {
-            model: 'music-s',
+            model: 'music-u',
             task_type: 'generate_music',
             input: {
                 gpt_description_prompt: `${style || 'pop'}, ${prompt}`,
@@ -98,7 +98,9 @@ app.get('/api/status/:taskId', async (req, res) => {
                 title: clips[0]?.title || 'Generated Music'
             });
         } else if (status === 'failed') {
-            res.json({ success: false, status: 'failed', error: result.data?.error });
+            const errorData = result.data?.error;
+            const errorMsg = typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || '알 수 없는 오류');
+            res.json({ success: false, status: 'failed', error: errorMsg });
         } else {
             res.json({ success: true, status: status || 'processing' });
         }
